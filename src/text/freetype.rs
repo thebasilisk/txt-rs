@@ -8,7 +8,7 @@ use freetype::{
 };
 use std::{ptr, slice};
 
-fn init_ft_lib() -> Result<FT_Library, FT_Error> {
+pub fn init_ft_lib() -> Result<FT_Library, FT_Error> {
     let mut lib = ptr::null_mut();
     let result = unsafe { FT_Init_FreeType(&mut lib) };
 
@@ -19,14 +19,15 @@ fn init_ft_lib() -> Result<FT_Library, FT_Error> {
     }
 }
 
-fn load_typeface(lib: FT_Library, name: &str) -> Result<FT_Face, FT_Error> {
+pub fn load_typeface(lib: FT_Library, name: &str) -> Result<FT_Face, FT_Error> {
     let mut face: FT_Face = ptr::null_mut();
-    //let filepath = format!("./resources/{name}.ttf");
-    let filepath = format!("./resources/Arial.ttf");
+    let filepath = format!("./resources/{name}.ttf");
+    // let filepath = format!("./resources/Arial.ttf");
     let result = unsafe { FT_New_Face(lib, filepath.as_ptr() as *const _, 0, &mut face) };
     if succeeded(result) {
         Ok(face)
     } else {
+        println!("{result}");
         println!("Error loading typeface");
         Err(result)
     }

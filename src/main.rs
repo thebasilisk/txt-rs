@@ -1,9 +1,10 @@
-use maths::{Float2, Float4, apply_rotation_float2, float2_add, float2_subtract};
+use atlas::{NUM_ASCII_CHARS, create_texture_atlas};
+use maths::{Float2, Float2x2, Float4, apply_rotation_float2, float2_add, float2_subtract};
 use metal::{MTLPixelFormat, MTLRegion, TextureDescriptor};
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{NSAnyEventMask, NSEventType};
 use objc2_foundation::{NSComparisonResult, NSDate, NSDefaultRunLoopMode};
-use text::freetype::get_char_glyph;
+use text::freetype::{get_char_glyph, init_ft_lib, load_typeface};
 use utils::{
     get_library, get_next_frame, init_render_with_bufs, make_buf, new_render_pass_descriptor,
     prepare_pipeline_state, simple_app,
@@ -32,17 +33,25 @@ fn main() {
     let (bitmap, char_width, char_height) = get_char_glyph("Arial", 'a').unwrap();
     // let char_width = 153;
     // let char_height = 153;
+    let (texture_atlas, width, height) = create_texture_atlas(&device).unwrap();
 
-    let tex_descriptor = TextureDescriptor::new();
-    tex_descriptor.set_pixel_format(MTLPixelFormat::R8Unorm);
-    tex_descriptor.set_width(char_height);
-    tex_descriptor.set_height(char_height);
+    // let tex_descriptor = TextureDescriptor::new();
+    // tex_descriptor.set_pixel_format(MTLPixelFormat::R8Unorm);
+    // tex_descriptor.set_width(char_height);
+    // tex_descriptor.set_height(char_height);
 
-    let char_tex = device.new_texture(&tex_descriptor);
-    let region = MTLRegion::new_2d(0, 0, char_width, char_height);
-    char_tex.replace_region(region, 0, bitmap as *const _, char_width * 1); //pixels per row * bytes per pixel
+    // let char_tex = device.new_texture(&tex_descriptor);
+    // let region = MTLRegion::new_2d(0, 0, char_width, char_height);
+    // char_tex.replace_region(region, 0, bitmap as *const _, char_width * 1); //pixels per row * bytes per pixel
 
-    let vertex_data = build_rect(x, y, char_width as f32, char_height as f32, 0.0);
+    let vertex_data = build_rect(
+        x,
+        y,
+        width as f32,
+        (height * NUM_ASCII_CHARS as u64) as f32,
+        // height as f32,
+        0.0,
+    );
     // let vertex_data = make_buf(&text_rect, &device);
 
     let fps = 60.0f32;
@@ -92,7 +101,12 @@ fn main() {
                     (size_of::<Float2>()) as u64,
                     vec![Float2(0.0, 0.0)].as_ptr() as *const _,
                 );
-                encoder.set_fragment_texture(0, Some(&char_tex));
+                encoder.set_fragment_bytes(
+                    0,
+                    size_of::<Float2>() as u64,
+                    vec![Float2(0.0, 0.0)].as_ptr() as *const _,
+                );
+                encoder.set_fragment_texture(0, Some(&texture_atlas));
                 encoder.draw_primitives(
                     metal::MTLPrimitiveType::Triangle,
                     0,
@@ -145,7 +159,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     );
     let vert1 = vertex_t {
         position: Float4(v1_rot_pos.0, v1_rot_pos.1, 0.0, 1.0),
-        uv: Float4(0.0, 1.0, 0.0, 0.0),
+        uv: Float4(0.0, height, 0.0, 0.0),
         color: Float4(0.3, 0.3, 0.3, 1.0),
     };
 
@@ -156,7 +170,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     );
     let vert2 = vertex_t {
         position: Float4(v2_rot_pos.0, v2_rot_pos.1, 0.0, 1.0),
-        uv: Float4(1.0, 1.0, 0.0, 0.0),
+        uv: Float4(width, height, 0.0, 0.0),
         color: Float4(0.3, 0.3, 0.3, 1.0),
     };
 
@@ -178,7 +192,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     );
     let vert4 = vertex_t {
         position: Float4(v4_rot_pos.0, v4_rot_pos.1, 0.0, 1.0),
-        uv: Float4(1.0, 0.0, 0.0, 0.0),
+        uv: Float4(width, 0.0, 0.0, 0.0),
         color: Float4(0.3, 0.3, 0.3, 1.0),
     };
 

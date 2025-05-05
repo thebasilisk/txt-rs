@@ -38,9 +38,10 @@ vertex ColorInOut box_vertex (
 
 fragment float4 box_fragment (
     ColorInOut in [[ stage_in ]],
-    texture2d<float, access::sample> char_tex [[ texture(0) ]]
+    texture2d<float, access::sample> char_tex [[ texture(0) ]],
+    const device float2 *tex_coord [[ buffer(0) ]]
 ) {
-    constexpr sampler s(address::repeat, filter::nearest);
-    float color = char_tex.sample(s, in.tex_coord).r;
+    constexpr sampler s(address::clamp_to_zero, filter::nearest, coord::pixel);
+    float color = char_tex.sample(s, in.tex_coord + tex_coord[0]).r;
     return float4(float3(color), 1.0);
 }
