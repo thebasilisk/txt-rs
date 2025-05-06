@@ -30,10 +30,12 @@ fn main() {
     let width = 300.0;
     let height = width;
 
-    let (bitmap, char_width, char_height) = get_char_glyph("Arial", 'a').unwrap();
+    let ft_lib = init_ft_lib().unwrap();
+    let ft_face = load_typeface(ft_lib, "Arial").unwrap();
+    // let (bitmap, char_width, char_height) = get_char_glyph(ft_face, 'z').unwrap();
     // let char_width = 153;
     // let char_height = 153;
-    let (texture_atlas, width, height) = create_texture_atlas(&device).unwrap();
+    let (texture_atlas, width, height) = create_texture_atlas(ft_face, &device).unwrap();
 
     // let tex_descriptor = TextureDescriptor::new();
     // tex_descriptor.set_pixel_format(MTLPixelFormat::R8Unorm);
@@ -48,8 +50,8 @@ fn main() {
         x,
         y,
         width as f32,
-        (height * NUM_ASCII_CHARS as u64) as f32,
-        // height as f32,
+        // (height * NUM_ASCII_CHARS as u64) as f32,
+        height as f32,
         0.0,
     );
     // let vertex_data = make_buf(&text_rect, &device);
@@ -104,9 +106,10 @@ fn main() {
                 encoder.set_fragment_bytes(
                     0,
                     size_of::<Float2>() as u64,
-                    vec![Float2(0.0, 0.0)].as_ptr() as *const _,
+                    vec![Float2(0.0, (frames % 26) as f32 * height as f32)].as_ptr() as *const _,
                 );
                 encoder.set_fragment_texture(0, Some(&texture_atlas));
+                // encoder.set_fragment_texture(0, Some(&char_tex));
                 encoder.draw_primitives(
                     metal::MTLPrimitiveType::Triangle,
                     0,
