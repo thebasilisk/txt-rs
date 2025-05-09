@@ -44,7 +44,7 @@ fragment float4 box_fragment (
     ColorInOut in [[ stage_in ]],
     texture2d<float, access::sample> char_tex [[ texture(0) ]]
 ) {
-    constexpr sampler s(address::clamp_to_zero, filter::nearest, coord::pixel);
-    float color = char_tex.sample(s, in.tex_coords.xy + in.tex_coords.zw).r;
-    return float4(float3(color), 1.0);
+    constexpr sampler s(address::clamp_to_zero, filter::linear, coord::pixel);
+    float alpha = char_tex.sample(s, in.tex_coords.xy + in.tex_coords.zw).r;
+    return float4(float3(1.0), alpha);
 }

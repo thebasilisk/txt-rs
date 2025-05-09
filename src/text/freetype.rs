@@ -1,63 +1,46 @@
 use freetype::{
-    FT_Error,
-    freetype::{
-        FT_Face, FT_Init_FreeType, FT_LOAD_RENDER, FT_Library, FT_Load_Char, FT_New_Face,
-        FT_Set_Pixel_Sizes, FT_Vector_,
-    },
-    succeeded,
+    Face, FtResult, Library,
+    face::LoadFlag,
+    ffi::{FT_BBox, FT_Vector},
 };
-use std::{ptr, slice};
 
-pub fn init_ft_lib() -> Result<FT_Library, FT_Error> {
-    let mut lib = ptr::null_mut();
-    let result = unsafe { FT_Init_FreeType(&mut lib) };
-
-    if succeeded(result) {
-        Ok(lib)
-    } else {
-        Err(result)
-    }
+pub struct GlyphData {
+    pub bitmap: Vec<u8>,
+    pub width: u64,
+    pub height: u64,
+    pub advance: FT_Vector,
+    pub cbox: FT_BBox,
 }
 
-pub fn load_typeface(lib: FT_Library, name: &str) -> Result<FT_Face, FT_Error> {
-    let mut face: FT_Face = ptr::null_mut();
+pub fn init_typeface_with_size(lib: &Library, name: &str, size: u32) -> FtResult<Face> {
     // let filepath = format!("./resources/{name}.ttf");
-    let filepath = format!("/Users/basil/rust-projects/txt-rs/resources/{name}.ttf");
-    let result = unsafe { FT_New_Face(lib, filepath.as_ptr() as *const _, 0, &mut face) };
-    if succeeded(result) {
-        Ok(face)
-    } else {
-        println!("Error loading typeface");
-        Err(result)
-    }
+    let filepath = format!("/Users/basil/rust-projects/txt-rs/resources/{name}");
+    let face = lib.new_face(filepath, 0)?;
+    face.set_pixel_sizes(size, size)?;
+    Ok(face)
 }
 
-pub fn get_char_glyph(
-    face: FT_Face,
-    character: char,
-) -> Result<(Vec<u8>, u64, u64, FT_Vector_), FT_Error> {
-    let result = unsafe { FT_Set_Pixel_Sizes(face, 300, 300) };
-    if !succeeded(result) {
-        return Err(result);
-    }
+pub fn get_char_glyph(face: &Face, character: char) -> FtResult<GlyphData> {
+    face.load_char(character as usize, LoadFlag::RENDER)?;
 
-    let result = unsafe { FT_Load_Char(face, character as u64, FT_LOAD_RENDER as i32) };
+    let slot = face.glyph();
+    let bitmap = slot.bitmap();
+    let width = slot.bitmap().width();
+    let height = slot.bitmap().rows();
+    let advance = slot.advance();
 
-    if !succeeded(result) {
-        return Err(result);
-    }
-
-    let slot = unsafe { (*face).glyph };
-    let buffer = unsafe { (*slot).bitmap.buffer };
-    let width = unsafe { (*slot).bitmap.width };
-    let height = unsafe { (*slot).bitmap.rows };
-    let advance = unsafe { (*slot).advance };
-    // println!("{width}, {height}");
-
-    let vector = if width == 0 || height == 0 {
-        vec![0]
+    let vec = if width == 0 || height == 0 {
+        vec![]
     } else {
-        unsafe { slice::from_raw_parts_mut(buffer, (width * height) as usize) }.to_vec()
+        bitmap.buffer().to_vec()
     };
-    Ok((vector, width as u64, height as u64, advance))
+
+    let cbox = slot.get_glyph().unwrap().get_cbox(3); //3 is FT_GLYPH_BBOX_PIXELS
+    Ok(GlyphData {
+        bitmap: vec,
+        width: width as u64,
+        height: height as u64,
+        advance,
+        cbox,
+    })
 }
