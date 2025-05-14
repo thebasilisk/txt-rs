@@ -94,9 +94,16 @@ pub fn make_buf<T>(data: &Vec<T>, device: &DeviceRef) -> Buffer {
         MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
     )
 }
+pub fn make_buf_with_capacity<T>(data: &Vec<T>, max_len: usize, device: &DeviceRef) -> Buffer {
+    device.new_buffer_with_data(
+        data.as_ptr() as *const _,
+        (mem::size_of::<T>() * max_len) as u64,
+        MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
+    )
+}
 
 pub fn copy_to_buf<T>(data: &Vec<T>, dst: &Buffer) {
-    let buf_pointer = dst.contents(); //how does this grab a mut pointer from a non mutable reference?
+    let buf_pointer = dst.contents();
     unsafe {
         std::ptr::copy(data.as_ptr(), buf_pointer as *mut T, data.len() as usize);
     }

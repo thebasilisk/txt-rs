@@ -1,14 +1,15 @@
+use std::str::FromStr;
+
 use atlas::{ASCII_START, Atlas, create_texture_atlas};
 use freetype::{Face, Library, ffi::FT_Vector};
 use maths::{Float2, Float4, apply_rotation_float2, float2_add, float2_subtract};
-use metal::{Buffer, DeviceRef};
 use objc2::rc::autoreleasepool;
-use objc2_app_kit::NSAnyEventMask;
+use objc2_app_kit::{NSAnyEventMask, NSEventType};
 use objc2_foundation::{NSComparisonResult, NSDate, NSDefaultRunLoopMode};
 use text::freetype::init_typeface_with_size;
 use utils::{
-    get_library, get_next_frame, init_render_with_bufs, make_buf, new_render_pass_descriptor,
-    prepare_pipeline_state, simple_app,
+    copy_to_buf, get_library, get_next_frame, init_render_with_bufs, make_buf,
+    make_buf_with_capacity, new_render_pass_descriptor, prepare_pipeline_state, simple_app,
 };
 
 mod atlas;
@@ -30,14 +31,27 @@ fn main() {
     let ft_face = init_typeface_with_size(&ft_lib, "Arial.ttf", 100).unwrap();
     let atlas = create_texture_atlas(&ft_face, &device).unwrap();
 
-    let word = "I have fixed all the problems! Now I have text that wraps.";
+    let max_char_count = 1000;
+    let text_box_size = 2000.0;
 
-    let mut cursor = Float2(-950.0, 550.0);
+    let mut word = String::new();
+    let cursor_start = Float2(-1000.0, 700.0);
+    let mut cursor = cursor_start.clone();
     let unis = Uniforms {
         screen_size: Float2(view_width as f32, view_height as f32),
     };
     let uni_buf = make_buf(&vec![unis], &device);
-    let (vert_buf, tex_buf) = verts_from_word(&mut cursor, word, 1000.0, &atlas, &ft_face, &device);
+
+    //initialize with dummy word so mem region isn't empty, otherwise segfaults
+    let init_string = String::from_str("initial").unwrap();
+    let (verts, texs) = verts_from_word(&mut cursor, &init_string, text_box_size, &atlas, &ft_face);
+    let vert_buf = make_buf_with_capacity(&verts, max_char_count * 6, &device);
+    let tex_buf = make_buf_with_capacity(&texs, max_char_count, &device);
+
+    //empty afterwards
+    let (verts, texs) = verts_from_word(&mut cursor, &word, text_box_size, &atlas, &ft_face);
+    copy_to_buf(&verts, &vert_buf);
+    copy_to_buf(&texs, &tex_buf);
 
     let fps = 60.0f32;
     let mut frames = 0;
@@ -89,6 +103,37 @@ fn main() {
                     );
                     match e {
                         Some(ref e) => match e.r#type() {
+                            NSEventType::KeyDown => {
+                                let in_chars = &e.characters();
+                                match in_chars {
+                                    Some(str) => {
+                                        cursor = cursor_start;
+                                        let char =
+                                            char::decode_utf16(Some(str.characterAtIndex(0)))
+                                                .map(|r| r.unwrap())
+                                                .collect::<Vec<char>>()[0];
+                                        if let Some(index) = char_to_index_checked(char) {
+                                            //don't love hardcoded backspace index
+                                            if index == 95 {
+                                                word.pop();
+                                            } else {
+                                                word.push(char);
+                                            }
+                                            let (verts, texs) = verts_from_word(
+                                                &mut cursor,
+                                                &word,
+                                                text_box_size,
+                                                &atlas,
+                                                &ft_face,
+                                            );
+                                            copy_to_buf(&verts, &vert_buf);
+                                            copy_to_buf(&texs, &tex_buf);
+                                        }
+                                        // println!("{word}")
+                                    }
+                                    None => println!("Huh? : {}", e.keyCode()),
+                                }
+                            }
                             _ => app.sendEvent(e),
                         },
                         None => {
@@ -180,8 +225,7 @@ fn verts_from_word(
     text_box_width: f32,
     atlas: &Atlas,
     face: &Face,
-    device: &DeviceRef,
-) -> (Buffer, Buffer) {
+) -> (Vec<vertex_t>, Vec<Float2>) {
     let mut all_verts = Vec::new();
     let mut all_tex_pointers = Vec::new();
 
@@ -219,7 +263,6 @@ fn verts_from_word(
     }
     for i in 0..word.len() {
         let current_char_index = char_to_index(word.chars().nth(i).unwrap());
-        let next_char = word.chars().nth(i + 1);
         all_verts.append(&mut build_rect(
             char_positions[i].0 + atlas.cboxes[current_char_index].xMin as f32,
             char_positions[i].1 + atlas.cboxes[current_char_index].yMin as f32,
@@ -232,14 +275,15 @@ fn verts_from_word(
             (current_char_index as u64 * atlas.max_height) as f32,
         ));
     }
-
-    let vertex_buffer = make_buf(&all_verts, &device);
-    let tex_pointer_buffer = make_buf(&all_tex_pointers, &device);
-    (vertex_buffer, tex_pointer_buffer)
+    (all_verts, all_tex_pointers)
 }
 
 fn char_to_index(char: char) -> usize {
     (char as u8 - ASCII_START) as usize
+}
+
+fn char_to_index_checked(char: char) -> Option<usize> {
+    ((char as u8).checked_sub(ASCII_START)).and_then(|index| Some(index as usize))
 }
 
 impl From<FT_Vector> for Float2 {

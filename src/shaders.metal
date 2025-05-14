@@ -36,7 +36,6 @@ vertex ColorInOut box_vertex (
     float2 pos = verts[index].pos.xy;
     out.position = float4(pos.x / screen_size.x, pos.y / screen_size.y, 0.0, 1.0);
     out.color = verts[index].col;
-    //out.tex_coords = float4(verts[index].uv.xy, tex_pointers[id]);
     out.uv = verts[index].uv.xy;
     out.tex_pointer = tex_pointers[id];
 
