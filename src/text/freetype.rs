@@ -13,8 +13,8 @@ pub struct GlyphData {
 }
 
 pub fn init_typeface_with_size(lib: &Library, name: &str, size: u32) -> FtResult<Face> {
-    // let filepath = format!("./resources/{name}.ttf");
-    let filepath = format!("/Users/basil/rust-projects/txt-rs/resources/{name}");
+    let filepath = format!("./resources/{name}");
+    // let filepath = format!("/Users/basil/rust-projects/txt-rs/resources/{name}");
     let face = lib.new_face(filepath, 0)?;
     face.set_pixel_sizes(size, size)?;
     Ok(face)

@@ -17,6 +17,22 @@ mod maths;
 mod text;
 mod utils;
 
+/*
+Things to do:
+    Add file i/o,
+    Add cursor and ability to edit from anywhere in the text
+    Add newline, tab indent, etc
+    Maybe: reorganize project files
+
+Much later things to do:
+    Fix kerning / implement more sophisticated kerning
+    Update backing data structure for text
+    Add text search (then cross-file search)
+    Add markdown support
+    Add link support
+    Add GUI and mouse interactivity
+*/
+
 fn main() {
     let view_width = 1024.0;
     let view_height = 768.0;
