@@ -19,6 +19,7 @@ pub struct Atlas {
 }
 
 //should maybe be an impl on atlas
+//current texture atlas impl doesn't work for large fonts, max mtltexture size is 16384
 pub fn create_texture_atlas(face: &Face, device: &DeviceRef) -> FtResult<Atlas> {
     let mut all_char_bitmaps = Vec::new();
     let mut all_char_widths = Vec::new();
@@ -40,7 +41,8 @@ pub fn create_texture_atlas(face: &Face, device: &DeviceRef) -> FtResult<Atlas> 
         all_char_cboxes.push(glyph_data.cbox);
     }
     let atlas_descriptor = TextureDescriptor::new();
-    let tex_height = (NUM_ASCII_CHARS as u64 + 1) * max_height; // +1 is a bad way to add space character maybe
+    let padded_height = max_height + 1;
+    let tex_height = (NUM_ASCII_CHARS as u64) * padded_height;
     atlas_descriptor.set_pixel_format(MTLPixelFormat::R8Unorm);
     atlas_descriptor.set_width(max_width);
     atlas_descriptor.set_height(tex_height);
@@ -51,7 +53,7 @@ pub fn create_texture_atlas(face: &Face, device: &DeviceRef) -> FtResult<Atlas> 
         let height_diff = max_height - all_char_heights[i];
         let region = MTLRegion::new_2d(
             0,
-            max_height * i as u64 + height_diff,
+            padded_height * i as u64 + height_diff, //if char height = max height the replaced region has 1 row of padding
             all_char_widths[i],
             all_char_heights[i],
         );
@@ -70,7 +72,7 @@ pub fn create_texture_atlas(face: &Face, device: &DeviceRef) -> FtResult<Atlas> 
     let atlas = Atlas {
         texture,
         max_width,
-        max_height,
+        max_height: padded_height, //max height is a bad label, should rename to slot_height maybe
         advances: all_char_advances,
         cboxes: all_char_cboxes,
     };

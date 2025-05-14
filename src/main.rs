@@ -27,19 +27,17 @@ fn main() {
     let command_queue = device.new_command_queue();
 
     let ft_lib = Library::init().unwrap();
-    let ft_face = init_typeface_with_size(&ft_lib, "Arial.ttf", 50).unwrap();
-    println!("{}", ft_face.has_kerning());
+    let ft_face = init_typeface_with_size(&ft_lib, "Arial.ttf", 100).unwrap();
     let atlas = create_texture_atlas(&ft_face, &device).unwrap();
 
-    let word = "i am typing small text!";
+    let word = "I have fixed all the problems! Now I have text that wraps.";
 
-    let mut cursor = Float2(-650.0, 150.0);
+    let mut cursor = Float2(-950.0, 550.0);
     let unis = Uniforms {
         screen_size: Float2(view_width as f32, view_height as f32),
     };
     let uni_buf = make_buf(&vec![unis], &device);
-    let (vert_buf, tex_buf) = verts_from_word(&mut cursor, word, &atlas, &ft_face, &device);
-    // let vertex_data = make_buf(data, device)
+    let (vert_buf, tex_buf) = verts_from_word(&mut cursor, word, 1000.0, &atlas, &ft_face, &device);
 
     let fps = 60.0f32;
     let mut frames = 0;
@@ -69,11 +67,11 @@ fn main() {
                     command_buffer,
                 );
                 encoder.set_fragment_texture(0, Some(&atlas.texture));
-                // encoder.set_fragment_texture(0, Some(&char_tex));
-                encoder.draw_primitives(
+                encoder.draw_primitives_instanced(
                     metal::MTLPrimitiveType::Triangle,
                     0,
-                    word.len() as u64 * 6, //six verts per char
+                    6,                 //six verts per char
+                    word.len() as u64, //num of chars
                 );
                 encoder.end_encoding();
 
@@ -179,6 +177,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
 fn verts_from_word(
     cursor: &mut Float2,
     word: &str,
+    text_box_width: f32,
     atlas: &Atlas,
     face: &Face,
     device: &DeviceRef,
@@ -186,20 +185,12 @@ fn verts_from_word(
     let mut all_verts = Vec::new();
     let mut all_tex_pointers = Vec::new();
 
+    let initial_cursor_pos = cursor.clone();
+    let mut char_positions: Vec<Float2> = Vec::new();
     for i in 0..word.len() {
+        char_positions.push(cursor.clone());
         let current_char_index = char_to_index(word.chars().nth(i).unwrap());
         let next_char = word.chars().nth(i + 1);
-        all_verts.append(&mut build_rect(
-            cursor.0 + atlas.cboxes[current_char_index].xMin as f32,
-            cursor.1 + atlas.cboxes[current_char_index].yMin as f32,
-            atlas.max_width as f32,
-            atlas.max_height as f32,
-            0.0,
-        ));
-        all_tex_pointers.push(Float2(
-            0.0,
-            (current_char_index as u64 * atlas.max_height) as f32,
-        ));
         *cursor = *cursor + Float2(atlas.advances[current_char_index].x as f32 / 64.0, 0.0);
         let kerning = match next_char {
             Some(char) => face
@@ -213,6 +204,33 @@ fn verts_from_word(
             None => Float2(0.0, 0.0),
         };
         *cursor = *cursor + Float2(kerning.0 / 64.0, 0.0);
+        if cursor.0 - initial_cursor_pos.0 >= text_box_width {
+            let (str, _) = word.split_at(i);
+            let index = str.rfind(char::is_whitespace).unwrap_or(str.len() - 1) + 1;
+
+            let cursor_diff = char_positions[index].0 - initial_cursor_pos.0;
+            for j in index..=str.len() {
+                char_positions[j].0 -= cursor_diff;
+                char_positions[j].1 -= atlas.max_height as f32;
+            }
+            cursor.0 = char_positions[i].0 + atlas.advances[current_char_index].x as f32 / 64.0;
+            cursor.1 -= atlas.max_height as f32;
+        }
+    }
+    for i in 0..word.len() {
+        let current_char_index = char_to_index(word.chars().nth(i).unwrap());
+        let next_char = word.chars().nth(i + 1);
+        all_verts.append(&mut build_rect(
+            char_positions[i].0 + atlas.cboxes[current_char_index].xMin as f32,
+            char_positions[i].1 + atlas.cboxes[current_char_index].yMin as f32,
+            atlas.max_width as f32,
+            atlas.max_height as f32,
+            0.0,
+        ));
+        all_tex_pointers.push(Float2(
+            0.0,
+            (current_char_index as u64 * atlas.max_height) as f32,
+        ));
     }
 
     let vertex_buffer = make_buf(&all_verts, &device);

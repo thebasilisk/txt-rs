@@ -7,7 +7,8 @@ using namespace metal;
 
 struct ColorInOut {
     float4 position [[ position ]];
-    float4 tex_coords; //first half uv, second half texture pointer
+    float2 uv; //first half uv, second half texture pointer
+    float2 tex_pointer; //first half uv, second half texture pointer
     float4 color;
 };
 
@@ -25,16 +26,19 @@ vertex ColorInOut box_vertex (
     const device uniforms *unis,
     const device vertex_t *verts,
     const device float2 *tex_pointers,
-    uint vid [[ vertex_id ]]
+    uint vid [[ vertex_id ]],
+    uint id [[instance_id ]]
 ) {
     ColorInOut out;
-    uint id = vid / 6;
 
+    uint index = id * 6 + vid;
     float2 screen_size = unis[0].screen_size;
-    float2 pos = verts[vid].pos.xy;
+    float2 pos = verts[index].pos.xy;
     out.position = float4(pos.x / screen_size.x, pos.y / screen_size.y, 0.0, 1.0);
-    out.color = verts[vid].col;
-    out.tex_coords = float4(verts[vid].uv.xy, tex_pointers[id]);
+    out.color = verts[index].col;
+    //out.tex_coords = float4(verts[index].uv.xy, tex_pointers[id]);
+    out.uv = verts[index].uv.xy;
+    out.tex_pointer = tex_pointers[id];
 
     return out;
 }
@@ -45,6 +49,6 @@ fragment float4 box_fragment (
     texture2d<float, access::sample> char_tex [[ texture(0) ]]
 ) {
     constexpr sampler s(address::clamp_to_zero, filter::linear, coord::pixel);
-    float alpha = char_tex.sample(s, in.tex_coords.xy + in.tex_coords.zw).r;
+    float alpha = char_tex.sample(s, in.uv.xy + in.tex_pointer).r;
     return float4(float3(1.0), alpha);
 }
