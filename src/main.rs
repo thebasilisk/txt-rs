@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use atlas::{ASCII_START, Atlas, create_texture_atlas};
+use atlas::{ASCII_START, Atlas};
 use freetype::{Face, Library, ffi::FT_Vector};
 use maths::{Float2, Float4, apply_rotation_float2, float2_add, float2_subtract};
 use objc2::rc::autoreleasepool;
@@ -45,7 +45,7 @@ fn main() {
 
     let ft_lib = Library::init().unwrap();
     let ft_face = init_typeface_with_size(&ft_lib, "Arial.ttf", 100).unwrap();
-    let atlas = create_texture_atlas(&ft_face, &device).unwrap();
+    let atlas = Atlas::new(&ft_face, &device).unwrap();
 
     let max_char_count = 1000;
     let text_box_size = 2000.0;
@@ -145,9 +145,11 @@ fn main() {
                                             copy_to_buf(&verts, &vert_buf);
                                             copy_to_buf(&texs, &tex_buf);
                                         }
-                                        // println!("{word}")
                                     }
-                                    None => println!("Huh? : {}", e.keyCode()),
+                                    None => {
+                                        println!("Huh? : {}", e.keyCode());
+                                        panic!()
+                                    }
                                 }
                             }
                             _ => app.sendEvent(e),
@@ -235,6 +237,8 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     verts
 }
 
+//Realized that I'm recalculating text wrapping every character draw
+//might not be necessary for simple rendering system I currently have
 fn verts_from_word(
     cursor: &mut Float2,
     word: &str,
@@ -251,7 +255,7 @@ fn verts_from_word(
         char_positions.push(cursor.clone());
         let current_char_index = char_to_index(word.chars().nth(i).unwrap());
         let next_char = word.chars().nth(i + 1);
-        *cursor = *cursor + Float2(atlas.advances[current_char_index].x as f32 / 64.0, 0.0);
+        cursor.0 += atlas.get_advance(current_char_index, cursor);
         let kerning = match next_char {
             Some(char) => face
                 .get_kerning(
@@ -269,11 +273,17 @@ fn verts_from_word(
             let index = str.rfind(char::is_whitespace).unwrap_or(str.len() - 1) + 1;
 
             let cursor_diff = char_positions[index].0 - initial_cursor_pos.0;
-            for j in index..=str.len() {
-                char_positions[j].0 -= cursor_diff;
-                char_positions[j].1 -= atlas.max_height as f32;
+            if cursor_diff <= 0.0 {
+                char_positions[i].0 = initial_cursor_pos.0;
+                char_positions[i].1 -= atlas.max_height as f32;
+            } else {
+                let height_diff = atlas.max_height as f32;
+                for j in index..=str.len() {
+                    char_positions[j].0 -= cursor_diff;
+                    char_positions[j].1 -= height_diff;
+                }
             }
-            cursor.0 = char_positions[i].0 + atlas.advances[current_char_index].x as f32 / 64.0;
+            cursor.0 = char_positions[i].0 + atlas.get_advance(current_char_index, cursor);
             cursor.1 -= atlas.max_height as f32;
         }
     }
@@ -292,6 +302,11 @@ fn verts_from_word(
         ));
     }
     (all_verts, all_tex_pointers)
+}
+
+fn newline(initial_cursor_pos: Float2, cursor: &mut Float2, line_height: f32) {
+    *cursor = initial_cursor_pos;
+    cursor.1 -= line_height;
 }
 
 fn char_to_index(char: char) -> usize {
