@@ -59,13 +59,19 @@ fn main() {
     let uni_buf = make_buf(&vec![unis], &device);
 
     //initialize with dummy word so mem region isn't empty, otherwise segfaults
-    let init_string = String::from_str("initial").unwrap();
-    let (verts, texs) = verts_from_word(&mut cursor, &init_string, text_box_size, &atlas, &ft_face);
+    let mut init_string = String::from_str("initial").unwrap();
+    let (verts, texs) = verts_from_word(
+        &mut cursor,
+        &mut init_string,
+        text_box_size,
+        &atlas,
+        &ft_face,
+    );
     let vert_buf = make_buf_with_capacity(&verts, max_char_count * 6, &device);
     let tex_buf = make_buf_with_capacity(&texs, max_char_count, &device);
 
     //empty afterwards
-    let (verts, texs) = verts_from_word(&mut cursor, &word, text_box_size, &atlas, &ft_face);
+    let (verts, texs) = verts_from_word(&mut cursor, &mut word, text_box_size, &atlas, &ft_face);
     copy_to_buf(&verts, &vert_buf);
     copy_to_buf(&texs, &tex_buf);
 
@@ -97,12 +103,14 @@ fn main() {
                     command_buffer,
                 );
                 encoder.set_fragment_texture(0, Some(&atlas.texture));
-                encoder.draw_primitives_instanced(
-                    metal::MTLPrimitiveType::Triangle,
-                    0,
-                    6,                 //six verts per char
-                    word.len() as u64, //num of chars
-                );
+                if word.len() != 0 {
+                    encoder.draw_primitives_instanced(
+                        metal::MTLPrimitiveType::Triangle,
+                        0,
+                        6,                 //six verts per char
+                        word.len() as u64, //num of chars
+                    );
+                }
                 encoder.end_encoding();
 
                 command_buffer.present_drawable(drawable);
@@ -128,23 +136,16 @@ fn main() {
                                             char::decode_utf16(Some(str.characterAtIndex(0)))
                                                 .map(|r| r.unwrap())
                                                 .collect::<Vec<char>>()[0];
-                                        if let Some(index) = char_to_index_checked(char) {
-                                            //don't love hardcoded backspace index
-                                            if index == 95 {
-                                                word.pop();
-                                            } else {
-                                                word.push(char);
-                                            }
-                                            let (verts, texs) = verts_from_word(
-                                                &mut cursor,
-                                                &word,
-                                                text_box_size,
-                                                &atlas,
-                                                &ft_face,
-                                            );
-                                            copy_to_buf(&verts, &vert_buf);
-                                            copy_to_buf(&texs, &tex_buf);
-                                        }
+                                        word.push(char);
+                                        let (verts, texs) = verts_from_word(
+                                            &mut cursor,
+                                            &mut word,
+                                            text_box_size,
+                                            &atlas,
+                                            &ft_face,
+                                        );
+                                        copy_to_buf(&verts, &vert_buf);
+                                        copy_to_buf(&texs, &tex_buf);
                                     }
                                     None => {
                                         println!("Huh? : {}", e.keyCode());
@@ -241,7 +242,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
 //might not be necessary for simple rendering system I currently have
 fn verts_from_word(
     cursor: &mut Float2,
-    word: &str,
+    word: &mut String,
     text_box_width: f32,
     atlas: &Atlas,
     face: &Face,
@@ -251,61 +252,102 @@ fn verts_from_word(
 
     let initial_cursor_pos = cursor.clone();
     let mut char_positions: Vec<Float2> = Vec::new();
+    let mut word_removal_indices = Vec::new();
     for i in 0..word.len() {
-        char_positions.push(cursor.clone());
-        let current_char_index = char_to_index(word.chars().nth(i).unwrap());
-        let next_char = word.chars().nth(i + 1);
-        cursor.0 += atlas.get_advance(current_char_index, cursor);
-        let kerning = match next_char {
-            Some(char) => face
-                .get_kerning(
-                    current_char_index as u32,
-                    char_to_index(char) as u32,
-                    freetype::face::KerningMode::KerningDefault,
-                )
-                .unwrap_or_default()
-                .into(),
-            None => Float2(0.0, 0.0),
-        };
-        *cursor = *cursor + Float2(kerning.0 / 64.0, 0.0);
-        if cursor.0 - initial_cursor_pos.0 >= text_box_width {
-            let (str, _) = word.split_at(i);
-            let index = str.rfind(char::is_whitespace).unwrap_or(str.len() - 1) + 1;
+        match TextCommand::from(word.chars().nth(i).unwrap()) {
+            TextCommand::Char(current_char_index) => {
+                char_positions.push(cursor.clone());
+                let next_char = word.chars().nth(i + 1);
+                cursor.0 += atlas.get_advance(current_char_index, cursor);
+                let kerning = match next_char {
+                    Some(char) => face
+                        .get_kerning(
+                            current_char_index as u32,
+                            char_to_index_checked(char).unwrap_or_default() as u32,
+                            freetype::face::KerningMode::KerningDefault,
+                        )
+                        .unwrap_or_default()
+                        .into(),
+                    None => Float2(0.0, 0.0),
+                };
+                *cursor = *cursor + Float2(kerning.0 / 64.0, 0.0);
+                if cursor.0 - initial_cursor_pos.0 >= text_box_width {
+                    let (str, _) = word.split_at(i);
+                    let index = str.rfind(char::is_whitespace).unwrap_or(str.len() - 1) + 1;
 
-            let cursor_diff = char_positions[index].0 - initial_cursor_pos.0;
-            if cursor_diff <= 0.0 {
-                char_positions[i].0 = initial_cursor_pos.0;
-                char_positions[i].1 -= atlas.max_height as f32;
-            } else {
-                let height_diff = atlas.max_height as f32;
-                for j in index..=str.len() {
-                    char_positions[j].0 -= cursor_diff;
-                    char_positions[j].1 -= height_diff;
+                    let cursor_diff = char_positions[index].0 - initial_cursor_pos.0;
+                    if cursor_diff <= 0.0 {
+                        char_positions[i].0 = initial_cursor_pos.0;
+                        char_positions[i].1 -= atlas.max_height as f32;
+                    } else {
+                        let height_diff = atlas.max_height as f32;
+                        for j in index..=str.len() {
+                            char_positions[j].0 -= cursor_diff;
+                            char_positions[j].1 -= height_diff;
+                        }
+                    }
+                    cursor.0 = char_positions[i].0 + atlas.get_advance(current_char_index, cursor);
+                    cursor.1 -= atlas.max_height as f32;
                 }
             }
-            cursor.0 = char_positions[i].0 + atlas.get_advance(current_char_index, cursor);
-            cursor.1 -= atlas.max_height as f32;
+            TextCommand::Backspace => {
+                word_removal_indices.push(i - 1);
+                word_removal_indices.push(i);
+            }
+            TextCommand::Newline => {
+                char_positions.push(cursor.clone());
+                newline(initial_cursor_pos, cursor, atlas.max_height as f32);
+            }
+            TextCommand::Unknown => println!("Ahh!"),
         }
     }
+    // word.char_indices()
+    //     .filter(|(i, _)| !word_removal_indices.contains(i))
+    //     .map(|(_, char)| char)
+    //     .collect::<String>();
+    for wri in word_removal_indices.into_iter().rev() {
+        word.remove(wri);
+    }
     for i in 0..word.len() {
-        let current_char_index = char_to_index(word.chars().nth(i).unwrap());
-        all_verts.append(&mut build_rect(
-            char_positions[i].0 + atlas.cboxes[current_char_index].xMin as f32,
-            char_positions[i].1 + atlas.cboxes[current_char_index].yMin as f32,
-            atlas.max_width as f32,
-            atlas.max_height as f32,
-            0.0,
-        ));
-        all_tex_pointers.push(Float2(
-            0.0,
-            (current_char_index as u64 * atlas.max_height) as f32,
-        ));
+        match TextCommand::from(word.chars().nth(i).unwrap()) {
+            TextCommand::Char(current_char_index) => {
+                all_verts.append(&mut build_rect(
+                    char_positions[i].0 + atlas.cboxes[current_char_index].xMin as f32,
+                    char_positions[i].1 + atlas.cboxes[current_char_index].yMin as f32,
+                    atlas.max_width as f32,
+                    atlas.max_height as f32,
+                    0.0,
+                ));
+                all_tex_pointers.push(Float2(
+                    0.0,
+                    (current_char_index as u64 * atlas.max_height) as f32,
+                ));
+            }
+            TextCommand::Backspace => panic!(),
+            TextCommand::Newline => {
+                //dont like hard coding space character
+                //should maybe have no character but this is probably fine
+                let current_char_index = char_to_index(' ');
+                all_verts.append(&mut build_rect(
+                    char_positions[i].0 + atlas.cboxes[current_char_index].xMin as f32,
+                    char_positions[i].1 + atlas.cboxes[current_char_index].yMin as f32,
+                    atlas.max_width as f32,
+                    atlas.max_height as f32,
+                    0.0,
+                ));
+                all_tex_pointers.push(Float2(
+                    0.0,
+                    (current_char_index as u64 * atlas.max_height) as f32,
+                ));
+            }
+            TextCommand::Unknown => panic!(),
+        }
     }
     (all_verts, all_tex_pointers)
 }
 
 fn newline(initial_cursor_pos: Float2, cursor: &mut Float2, line_height: f32) {
-    *cursor = initial_cursor_pos;
+    cursor.0 = initial_cursor_pos.0;
     cursor.1 -= line_height;
 }
 
@@ -315,6 +357,27 @@ fn char_to_index(char: char) -> usize {
 
 fn char_to_index_checked(char: char) -> Option<usize> {
     ((char as u8).checked_sub(ASCII_START)).and_then(|index| Some(index as usize))
+}
+
+enum TextCommand {
+    Char(usize),
+    Backspace,
+    Newline,
+    Unknown,
+}
+impl From<char> for TextCommand {
+    fn from(value: char) -> Self {
+        match char_to_index_checked(value) {
+            Some(index) => match value as u8 {
+                127 => TextCommand::Backspace,
+                _ => TextCommand::Char(index),
+            },
+            None => match value as u8 {
+                13 => TextCommand::Newline,
+                _ => TextCommand::Unknown,
+            },
+        }
+    }
 }
 
 impl From<FT_Vector> for Float2 {
