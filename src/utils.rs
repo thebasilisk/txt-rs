@@ -22,7 +22,7 @@ pub fn new_render_pass_descriptor(texture: &TextureRef) -> &RenderPassDescriptor
         .unwrap();
     render_pass_attachment.set_texture(Some(&texture));
     render_pass_attachment.set_load_action(MTLLoadAction::Clear);
-    render_pass_attachment.set_clear_color(MTLClearColor::new(0.0, 0.0, 0.0, 1.0));
+    render_pass_attachment.set_clear_color(MTLClearColor::new(0.0, 0.0, 0.0, 0.0));
     render_pass_attachment.set_store_action(MTLStoreAction::Store);
 
     render_pass_descriptor
@@ -33,6 +33,7 @@ pub fn new_metal_layer(device: &DeviceRef) -> MetalLayer {
 
     layer.set_device(device);
     layer.set_pixel_format(MTLPixelFormat::RGBA8Unorm);
+    layer.set_opaque(false);
     layer.set_presents_with_transaction(false);
 
     return layer;

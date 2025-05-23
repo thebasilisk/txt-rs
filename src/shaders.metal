@@ -49,5 +49,5 @@ fragment float4 box_fragment (
 ) {
     constexpr sampler s(address::clamp_to_zero, filter::linear, coord::pixel);
     float alpha = char_tex.sample(s, in.uv.xy + in.tex_pointer).r;
-    return float4(float3(1.0), alpha);
+    return float4(in.color.rgb, alpha);
 }

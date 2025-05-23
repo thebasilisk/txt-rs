@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, OpenOptions},
+    fs::File,
     io::{Read, Write},
     path::Path,
     str::FromStr,
@@ -56,6 +56,7 @@ fn main() {
     let text_box_size = 2000.0;
 
     let mut word = String::new();
+    let color = Float4(0.0, 0.0, 0.0, 1.0);
 
     let text_path = Path::new("text.txt");
 
@@ -76,6 +77,7 @@ fn main() {
         &mut cursor.clone(),
         &mut init_string,
         text_box_size,
+        color,
         &atlas,
         &ft_face,
     );
@@ -83,7 +85,14 @@ fn main() {
     let tex_buf = make_buf_with_capacity(&texs, max_char_count, &device);
 
     //empty afterwards
-    let (verts, texs) = verts_from_word(&mut cursor, &mut word, text_box_size, &atlas, &ft_face);
+    let (verts, texs) = verts_from_word(
+        &mut cursor,
+        &mut word,
+        text_box_size,
+        color,
+        &atlas,
+        &ft_face,
+    );
     copy_to_buf(&verts, &vert_buf);
     copy_to_buf(&texs, &tex_buf);
 
@@ -155,6 +164,7 @@ fn main() {
                                             &mut cursor,
                                             &mut word,
                                             text_box_size,
+                                            color,
                                             &atlas,
                                             &ft_face,
                                         );
@@ -194,7 +204,7 @@ struct Uniforms {
 }
 
 //bottom left corner rect
-fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t> {
+fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32, color: Float4) -> Vec<vertex_t> {
     let mut verts = Vec::new();
 
     let origin = Float2(x, y - height);
@@ -206,7 +216,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     let vert1 = vertex_t {
         position: Float4(v1_rot_pos.0, v1_rot_pos.1, 0.0, 1.0),
         uv: Float4(0.0, height, 0.0, 0.0),
-        color: Float4(0.3, 0.3, 0.3, 1.0),
+        color,
     };
 
     let v2_pos = Float2(x + width, y - height);
@@ -217,7 +227,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     let vert2 = vertex_t {
         position: Float4(v2_rot_pos.0, v2_rot_pos.1, 0.0, 1.0),
         uv: Float4(width, height, 0.0, 0.0),
-        color: Float4(0.3, 0.3, 0.3, 1.0),
+        color,
     };
 
     let v3_pos = Float2(x, y);
@@ -228,7 +238,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     let vert3 = vertex_t {
         position: Float4(v3_rot_pos.0, v3_rot_pos.1, 0.0, 1.0),
         uv: Float4(0.0, 0.0, 0.0, 0.0),
-        color: Float4(0.3, 0.3, 0.3, 1.0),
+        color,
     };
 
     let v4_pos = Float2(x + width, y);
@@ -239,7 +249,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32) -> Vec<vertex_t
     let vert4 = vertex_t {
         position: Float4(v4_rot_pos.0, v4_rot_pos.1, 0.0, 1.0),
         uv: Float4(width, 0.0, 0.0, 0.0),
-        color: Float4(0.3, 0.3, 0.3, 1.0),
+        color,
     };
 
     verts.push(vert1);
@@ -258,6 +268,7 @@ fn verts_from_word(
     cursor: &mut Float2,
     word: &mut String,
     text_box_width: f32,
+    color: Float4,
     atlas: &Atlas,
     face: &Face,
 ) -> (Vec<vertex_t>, Vec<Float2>) {
@@ -331,6 +342,7 @@ fn verts_from_word(
                     atlas.max_width as f32,
                     atlas.max_height as f32,
                     0.0,
+                    color,
                 ));
                 all_tex_pointers.push(Float2(
                     0.0,
@@ -348,6 +360,7 @@ fn verts_from_word(
                     atlas.max_width as f32,
                     atlas.max_height as f32,
                     0.0,
+                    color,
                 ));
                 all_tex_pointers.push(Float2(
                     0.0,
