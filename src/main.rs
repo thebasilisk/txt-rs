@@ -1,4 +1,9 @@
-use std::str::FromStr;
+use std::{
+    fs::{File, OpenOptions},
+    io::{Read, Write},
+    path::Path,
+    str::FromStr,
+};
 
 use atlas::{ASCII_START, Atlas};
 use freetype::{Face, Library, ffi::FT_Vector};
@@ -51,6 +56,13 @@ fn main() {
     let text_box_size = 2000.0;
 
     let mut word = String::new();
+
+    let text_path = Path::new("text.txt");
+
+    if let Ok(mut file) = File::open(text_path) {
+        file.read_to_string(&mut word).unwrap();
+    };
+
     let cursor_start = Float2(-1000.0, 700.0);
     let mut cursor = cursor_start.clone();
     let unis = Uniforms {
@@ -61,7 +73,7 @@ fn main() {
     //initialize with dummy word so mem region isn't empty, otherwise segfaults
     let mut init_string = String::from_str("initial").unwrap();
     let (verts, texs) = verts_from_word(
-        &mut cursor,
+        &mut cursor.clone(),
         &mut init_string,
         text_box_size,
         &atlas,
@@ -83,6 +95,8 @@ fn main() {
         autoreleasepool(|_| {
             if app.windows().is_empty() {
                 unsafe {
+                    let mut file = File::create(text_path).unwrap();
+                    file.write_all(word.as_bytes()).unwrap();
                     app.terminate(None);
                 }
             }
