@@ -361,9 +361,11 @@ fn verts_from_word(
                 }
             }
             TextCommand::Backspace => {
-                word_removal_indices.push(i - 1);
+                if let Some(index) = i.checked_sub(1) {
+                    word_removal_indices.push(index);
+                    *cursor = char_positions[index];
+                }
                 word_removal_indices.push(i);
-                *cursor = char_positions[i - 1];
             }
             TextCommand::Newline => {
                 char_positions.push(cursor.clone());
