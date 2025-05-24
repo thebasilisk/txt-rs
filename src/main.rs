@@ -59,17 +59,18 @@ fn main() {
     let max_char_count = 1000;
     let text_box_size = 2000.0;
 
-    let mut word = String::new();
+    let mut text_string = String::new();
     let color = Float4(0.0, 0.0, 0.0, 1.0);
 
     let text_path = Path::new("text.txt");
 
     if let Ok(mut file) = File::open(text_path) {
-        file.read_to_string(&mut word).unwrap();
+        file.read_to_string(&mut text_string).unwrap();
     };
 
     let cursor_start = Float2(-1000.0, 700.0);
     let mut cursor = cursor_start.clone();
+    let mut index_in_text = text_string.len();
     let unis = Uniforms {
         screen_size: Float2(view_width as f32, view_height as f32),
     };
@@ -77,7 +78,7 @@ fn main() {
 
     //initialize with dummy word so mem region isn't empty, otherwise segfaults
     let mut init_string = String::from_str("initial").unwrap();
-    let (text_verts, text_texs) = verts_from_word(
+    let (text_verts, text_texs) = verts_from_text(
         &mut cursor.clone(),
         &mut init_string,
         text_box_size,
@@ -89,9 +90,9 @@ fn main() {
     let text_tex_buf = make_buf_with_capacity(&text_texs, max_char_count, &device);
 
     //empty afterwards
-    let (text_verts, text_texs) = verts_from_word(
+    let (text_verts, text_texs) = verts_from_text(
         &mut cursor,
-        &mut word,
+        &mut text_string,
         text_box_size,
         color,
         &atlas,
@@ -101,7 +102,7 @@ fn main() {
     copy_to_buf(&text_texs, &text_tex_buf);
 
     let mut cursor_counter = 0;
-    let cursor_verts = build_cursor_verts(&cursor, &text_verts, font_size, &mut cursor_counter);
+    let cursor_verts = build_cursor_verts(&cursor, font_size, &mut cursor_counter);
     let cursor_vert_buf = make_buf(&cursor_verts, &device);
 
     let fps = 60.0f32;
@@ -113,7 +114,7 @@ fn main() {
             if app.windows().is_empty() {
                 unsafe {
                     let mut file = File::create(text_path).unwrap();
-                    file.write_all(word.as_bytes()).unwrap();
+                    file.write_all(text_string.as_bytes()).unwrap();
                     app.terminate(None);
                 }
             }
@@ -121,8 +122,7 @@ fn main() {
                 frame_time = get_next_frame(fps as f64);
                 frames += 1;
 
-                let cursor_verts =
-                    build_cursor_verts(&cursor, &text_verts, font_size, &mut cursor_counter);
+                let cursor_verts = build_cursor_verts(&cursor, font_size, &mut cursor_counter);
                 copy_to_buf(&cursor_verts, &cursor_vert_buf);
 
                 let command_buffer = command_queue.new_command_buffer();
@@ -139,12 +139,12 @@ fn main() {
                     command_buffer,
                 );
                 encoder.set_fragment_texture(0, Some(&atlas.texture));
-                if word.len() != 0 {
+                if text_string.len() != 0 {
                     encoder.draw_primitives_instanced(
                         metal::MTLPrimitiveType::Triangle,
                         0,
-                        6,                 //six verts per char
-                        word.len() as u64, //num of chars
+                        6,                        //six verts per char
+                        text_string.len() as u64, //num of chars
                     );
                 }
 
@@ -176,6 +176,7 @@ fn main() {
                         Some(ref e) => match e.r#type() {
                             NSEventType::KeyDown => {
                                 let in_chars = &e.characters();
+                                //should try not to block the event loop, for now it's fine
                                 match in_chars {
                                     Some(str) => {
                                         cursor = cursor_start;
@@ -183,10 +184,14 @@ fn main() {
                                             char::decode_utf16(Some(str.characterAtIndex(0)))
                                                 .map(|r| r.unwrap())
                                                 .collect::<Vec<char>>()[0];
-                                        word.push(char);
-                                        let (text_verts, text_texs) = verts_from_word(
+                                        match index_in_text == text_string.len() {
+                                            true => text_string.push(char),
+                                            false => text_string.insert(index_in_text, char),
+                                        };
+                                        move_cursor_index(&mut index_in_text, char);
+                                        let (text_verts, text_texs) = verts_from_text(
                                             &mut cursor,
-                                            &mut word,
+                                            &mut text_string,
                                             text_box_size,
                                             color,
                                             &atlas,
@@ -215,6 +220,7 @@ fn main() {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[allow(non_camel_case_types)]
 struct vertex_t {
     position: Float4,
     uv: Float4,
@@ -286,12 +292,7 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32, color: Float4) 
     verts
 }
 
-fn build_cursor_verts(
-    cursor: &Float2,
-    text_verts: &Vec<vertex_t>,
-    font_size: u32,
-    counter: &mut u32,
-) -> Vec<vertex_t> {
+fn build_cursor_verts(cursor: &Float2, font_size: u32, counter: &mut u32) -> Vec<vertex_t> {
     let counter_const = 50;
     *counter = (*counter + 1) % counter_const;
     let current_cursor_color = if *counter <= counter_const / 2 {
@@ -311,7 +312,7 @@ fn build_cursor_verts(
 
 //Realized that I'm recalculating text wrapping every character draw
 //might not be necessary for simple rendering system I currently have
-fn verts_from_word(
+fn verts_from_text(
     cursor: &mut Float2,
     word: &mut String,
     text_box_width: f32,
@@ -421,6 +422,15 @@ fn verts_from_word(
         }
     }
     (all_verts, all_tex_pointers)
+}
+
+fn move_cursor_index(index: &mut usize, char: char) {
+    match TextCommand::from(char) {
+        TextCommand::Char(_) => *index = index.checked_add(1).unwrap_or(*index),
+        TextCommand::Backspace => *index = index.checked_sub(1).unwrap_or(*index),
+        TextCommand::Newline => *index = index.checked_add(1).unwrap_or(*index),
+        TextCommand::Unknown => panic!(),
+    }
 }
 
 fn newline(initial_cursor_pos: Float2, cursor: &mut Float2, line_height: f32) {
