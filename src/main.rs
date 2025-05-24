@@ -3,6 +3,7 @@ use std::{
     io::{Read, Write},
     path::Path,
     str::FromStr,
+    time::Duration,
 };
 
 use atlas::{ASCII_START, Atlas};
@@ -160,6 +161,7 @@ fn main() {
 
                 command_buffer.present_drawable(drawable);
                 command_buffer.commit();
+                std::thread::sleep(Duration::from_millis((1000.0 / fps) as u64));
             }
 
             loop {
