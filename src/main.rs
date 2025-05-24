@@ -41,11 +41,14 @@ Much later things to do:
 fn main() {
     let view_width = 1024.0;
     let view_height = 768.0;
+    let font_size = 100;
     let (app, _window, device, layer) = simple_app(view_width, view_height, "Texter");
 
     let shaderlib = get_library(&device);
 
-    let render_pipeline = prepare_pipeline_state(&device, "box_vertex", "box_fragment", &shaderlib);
+    let text_pipeline = prepare_pipeline_state(&device, "box_vertex", "text_fragment", &shaderlib);
+    let cursor_pipeline =
+        prepare_pipeline_state(&device, "box_vertex", "cursor_fragment", &shaderlib);
     let command_queue = device.new_command_queue();
 
     let ft_lib = Library::init().unwrap();
@@ -73,7 +76,7 @@ fn main() {
 
     //initialize with dummy word so mem region isn't empty, otherwise segfaults
     let mut init_string = String::from_str("initial").unwrap();
-    let (verts, texs) = verts_from_word(
+    let (text_verts, text_texs) = verts_from_word(
         &mut cursor.clone(),
         &mut init_string,
         text_box_size,
@@ -81,11 +84,11 @@ fn main() {
         &atlas,
         &ft_face,
     );
-    let vert_buf = make_buf_with_capacity(&verts, max_char_count * 6, &device);
-    let tex_buf = make_buf_with_capacity(&texs, max_char_count, &device);
+    let text_vert_buf = make_buf_with_capacity(&text_verts, max_char_count * 6, &device);
+    let text_tex_buf = make_buf_with_capacity(&text_texs, max_char_count, &device);
 
     //empty afterwards
-    let (verts, texs) = verts_from_word(
+    let (text_verts, text_texs) = verts_from_word(
         &mut cursor,
         &mut word,
         text_box_size,
@@ -93,8 +96,12 @@ fn main() {
         &atlas,
         &ft_face,
     );
-    copy_to_buf(&verts, &vert_buf);
-    copy_to_buf(&texs, &tex_buf);
+    copy_to_buf(&text_verts, &text_vert_buf);
+    copy_to_buf(&text_texs, &text_tex_buf);
+
+    let mut cursor_counter = 0;
+    let cursor_verts = build_cursor_verts(&cursor, &text_verts, font_size, &mut cursor_counter);
+    let cursor_vert_buf = make_buf(&cursor_verts, &device);
 
     let fps = 60.0f32;
     let mut frames = 0;
@@ -113,16 +120,21 @@ fn main() {
                 frame_time = get_next_frame(fps as f64);
                 frames += 1;
 
+                let cursor_verts =
+                    build_cursor_verts(&cursor, &text_verts, font_size, &mut cursor_counter);
+                copy_to_buf(&cursor_verts, &cursor_vert_buf);
+
                 let command_buffer = command_queue.new_command_buffer();
 
                 let drawable = layer.next_drawable().unwrap();
                 let texture = drawable.texture();
                 let render_descriptor = new_render_pass_descriptor(&texture);
 
+                //Text Draw
                 let encoder = init_render_with_bufs(
-                    &[&uni_buf, &vert_buf, &tex_buf],
+                    &[&uni_buf, &text_vert_buf, &text_tex_buf],
                     &render_descriptor,
-                    &render_pipeline,
+                    &text_pipeline,
                     command_buffer,
                 );
                 encoder.set_fragment_texture(0, Some(&atlas.texture));
@@ -134,6 +146,16 @@ fn main() {
                         word.len() as u64, //num of chars
                     );
                 }
+
+                //Cursor Draw
+                encoder.set_render_pipeline_state(&cursor_pipeline);
+                encoder.set_vertex_buffer(1, Some(&cursor_vert_buf), 0);
+                encoder.draw_primitives(
+                    metal::MTLPrimitiveType::Triangle,
+                    0,
+                    cursor_verts.len() as u64,
+                );
+
                 encoder.end_encoding();
 
                 command_buffer.present_drawable(drawable);
@@ -160,7 +182,7 @@ fn main() {
                                                 .map(|r| r.unwrap())
                                                 .collect::<Vec<char>>()[0];
                                         word.push(char);
-                                        let (verts, texs) = verts_from_word(
+                                        let (text_verts, text_texs) = verts_from_word(
                                             &mut cursor,
                                             &mut word,
                                             text_box_size,
@@ -168,8 +190,8 @@ fn main() {
                                             &atlas,
                                             &ft_face,
                                         );
-                                        copy_to_buf(&verts, &vert_buf);
-                                        copy_to_buf(&texs, &tex_buf);
+                                        copy_to_buf(&text_verts, &text_vert_buf);
+                                        copy_to_buf(&text_texs, &text_tex_buf);
                                     }
                                     None => {
                                         println!("Huh? : {}", e.keyCode());
@@ -262,6 +284,29 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32, color: Float4) 
     verts
 }
 
+fn build_cursor_verts(
+    cursor: &Float2,
+    text_verts: &Vec<vertex_t>,
+    font_size: u32,
+    counter: &mut u32,
+) -> Vec<vertex_t> {
+    let counter_const = 50;
+    *counter = (*counter + 1) % counter_const;
+    let current_cursor_color = if *counter <= counter_const / 2 {
+        Float4(0.0, 0.0, 0.0, 1.0)
+    } else {
+        Float4(1.0, 1.0, 1.0, 1.0)
+    };
+    build_rect(
+        cursor.0,
+        cursor.1,
+        font_size as f32 / 2.0,
+        font_size as f32,
+        0.0,
+        current_cursor_color,
+    )
+}
+
 //Realized that I'm recalculating text wrapping every character draw
 //might not be necessary for simple rendering system I currently have
 fn verts_from_word(
@@ -318,6 +363,7 @@ fn verts_from_word(
             TextCommand::Backspace => {
                 word_removal_indices.push(i - 1);
                 word_removal_indices.push(i);
+                *cursor = char_positions[i - 1];
             }
             TextCommand::Newline => {
                 char_positions.push(cursor.clone());

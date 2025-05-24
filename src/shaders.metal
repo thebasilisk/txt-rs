@@ -43,11 +43,17 @@ vertex ColorInOut box_vertex (
 }
 
 
-fragment float4 box_fragment (
+fragment float4 text_fragment (
     ColorInOut in [[ stage_in ]],
     texture2d<float, access::sample> char_tex [[ texture(0) ]]
 ) {
     constexpr sampler s(address::clamp_to_zero, filter::linear, coord::pixel);
     float alpha = char_tex.sample(s, in.uv.xy + in.tex_pointer).r;
     return float4(in.color.rgb, alpha);
+}
+
+fragment float4 cursor_fragment (
+    ColorInOut in [[ stage_in ]]
+) {
+    return float4(in.color.rgb, 1.0);
 }
