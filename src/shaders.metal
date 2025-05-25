@@ -55,5 +55,5 @@ fragment float4 text_fragment (
 fragment float4 cursor_fragment (
     ColorInOut in [[ stage_in ]]
 ) {
-    return float4(in.color.rgb, 1.0);
+    return in.color;
 }
