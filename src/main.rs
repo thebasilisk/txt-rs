@@ -71,6 +71,7 @@ fn main() {
     let cursor_start = Float2(-1000.0, 700.0);
     let mut cursor = cursor_start.clone();
     let mut index_in_text = text_string.len();
+    text_string.push('\r');
     let unis = Uniforms {
         screen_size: Float2(view_width as f32, view_height as f32),
     };
@@ -119,6 +120,7 @@ fn main() {
         autoreleasepool(|_| {
             if app.windows().is_empty() {
                 unsafe {
+                    text_string.pop();
                     let mut file = File::create(text_path).unwrap();
                     file.write_all(text_string.as_bytes()).unwrap();
                     app.terminate(None);
@@ -136,7 +138,6 @@ fn main() {
                     &mut cursor_counter,
                 );
                 copy_to_buf(&cursor_verts, &cursor_vert_buf);
-
                 let command_buffer = command_queue.new_command_buffer();
 
                 let drawable = layer.next_drawable().unwrap();
@@ -196,19 +197,26 @@ fn main() {
                                             char::decode_utf16(Some(str.characterAtIndex(0)))
                                                 .map(|r| r.unwrap())
                                                 .collect::<Vec<char>>()[0];
-                                        if let Some(_) =
-                                            handle_char(char, &mut index_in_text, &text_string)
+                                        // println!("{index_in_text}");
+                                        if let Some(command) =
+                                            handle_char(char, &mut index_in_text, &mut text_string)
                                         {
+                                            if let KeyCommand::CC(ControlCommand::Direction(dir)) =
+                                                command
+                                            {
+                                                // println!("{}", text_string.len());
+                                                // println!("{}", char_positions.len());
+                                                let offset = (dir as f32 * 2.0 - 1.0)
+                                                    * atlas.max_height as f32;
+                                                index_in_text = move_cursor(
+                                                    index_in_text,
+                                                    offset,
+                                                    &char_positions,
+                                                    &atlas,
+                                                );
+                                                continue;
+                                            }
                                             cursor = cursor_start;
-                                            match index_in_text == text_string.len() {
-                                                true => text_string.push(char),
-                                                false => text_string.insert(index_in_text, char),
-                                            };
-                                            move_cursor_index(
-                                                &mut index_in_text,
-                                                char,
-                                                &text_string,
-                                            );
                                             let (text_verts, text_texs, char_positions_updated) =
                                                 verts_from_text(
                                                     &mut cursor,
@@ -314,7 +322,26 @@ fn build_rect(x: f32, y: f32, width: f32, height: f32, rot: f32, color: Float4) 
 
     verts
 }
-
+fn move_cursor(index: usize, offset: f32, char_positions: &Vec<Float2>, atlas: &Atlas) -> usize {
+    // let index = index.checked_sub(1).unwrap_or(0);
+    let cursor = if index == char_positions.len() {
+        char_positions[index - 1] - Float2(-atlas.get_advance(index - 1), offset)
+    } else {
+        char_positions[index] - Float2(0.0, offset)
+    };
+    char_positions
+        .iter()
+        .map(|&pos| (cursor - pos).magnitude())
+        .enumerate()
+        .fold((0, f32::INFINITY), |acc, val| {
+            // println!("{:?}", val);
+            if val.1 < acc.1 { val } else { acc }
+        })
+        .0
+    // .collect::<Vec<(usize, f32)>>();
+    // char_dists.sort_by(|(_, val1), (_, val2)| val1.total_cmp(val2));
+    // println!("{:?}", &char_dists[1..3])
+}
 fn build_cursor_verts(
     cursor: &Float2,
     index: &usize,
@@ -365,7 +392,7 @@ fn verts_from_text(
             TextCommand::Char(current_char_index) => {
                 char_positions.push(cursor.clone());
                 let next_char = text_string.chars().nth(i + 1);
-                cursor.0 += atlas.get_advance(current_char_index, cursor);
+                cursor.0 += atlas.get_advance(current_char_index);
                 let kerning = match next_char {
                     Some(char) => face
                         .get_kerning(
@@ -393,8 +420,8 @@ fn verts_from_text(
                             char_positions[j].1 -= height_diff;
                         }
                     }
-                    cursor.0 = char_positions[i].0 + atlas.get_advance(current_char_index, cursor);
-                    cursor.1 -= atlas.max_height as f32;
+                    cursor.0 = char_positions[i].0 + atlas.get_advance(current_char_index);
+                    cursor.1 -= atlas.max_height as f32 * 1.05;
                 }
             }
             TextCommand::Backspace => {
@@ -452,18 +479,6 @@ fn verts_from_text(
         }
     }
     (all_verts, all_tex_pointers, char_positions)
-}
-
-fn move_cursor_index(index: &mut usize, char: char, text_string: &String) {
-    match TextCommand::from(char) {
-        TextCommand::Char(_) => *index = index.checked_add(1).unwrap_or(*index),
-        TextCommand::Backspace => *index = index.checked_sub(1).unwrap_or(*index),
-        TextCommand::Newline => *index = index.checked_add(1).unwrap_or(*index),
-        TextCommand::Unknown => panic!(),
-    }
-    if *index > text_string.len() {
-        *index = text_string.len()
-    }
 }
 
 fn newline(initial_cursor_pos: Float2, cursor: &mut Float2, line_height: f32) {
@@ -534,23 +549,48 @@ impl From<char> for KeyCommand {
     }
 }
 
-fn handle_char(char: char, index: &mut usize, text_string: &String) -> Option<TextCommand> {
+fn handle_char(char: char, index: &mut usize, text_string: &mut String) -> Option<KeyCommand> {
     match KeyCommand::from(char) {
-        KeyCommand::TC(text_command) => Some(text_command),
-        KeyCommand::CC(control_command) => match control_command {
-            ControlCommand::Direction(dir) => {
-                match dir {
-                    0 => *index = index.checked_sub(1).unwrap_or(*index),
-                    1 => *index = index.checked_add(1).unwrap_or(*index),
-                    2 => *index = index.checked_sub(1).unwrap_or(*index),
-                    3 => *index = index.checked_add(1).unwrap_or(*index),
-                    _ => (),
-                };
-                if *index > text_string.len() {
-                    *index = text_string.len()
+        KeyCommand::TC(text_command) => {
+            match *index == text_string.len() {
+                true => text_string.push(char),
+                false => text_string.insert(*index, char),
+            };
+            match text_command {
+                TextCommand::Char(_) => {
+                    *index = index
+                        .checked_add(1)
+                        .unwrap_or(*index)
+                        .min(text_string.len())
                 }
-                None
+                TextCommand::Backspace => *index = index.checked_sub(1).unwrap_or(*index),
+                TextCommand::Newline => {
+                    *index = index
+                        .checked_add(1)
+                        .unwrap_or(*index)
+                        .min(text_string.len())
+                }
+                TextCommand::Unknown => panic!(),
             }
+            Some(KeyCommand::TC(text_command))
+        }
+        KeyCommand::CC(control_command) => match control_command {
+            ControlCommand::Direction(dir) => match dir {
+                0 => Some(KeyCommand::CC(control_command)),
+                1 => Some(KeyCommand::CC(control_command)),
+                2 => {
+                    *index = index.checked_sub(1).unwrap_or(*index);
+                    None
+                }
+                3 => {
+                    *index = index
+                        .checked_add(1)
+                        .unwrap_or(*index)
+                        .min(text_string.len() - 1);
+                    None
+                }
+                _ => None,
+            },
             ControlCommand::Unknown => panic!(),
         },
         KeyCommand::Unknown => panic!(),

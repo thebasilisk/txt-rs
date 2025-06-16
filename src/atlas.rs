@@ -79,7 +79,7 @@ impl Atlas {
         Ok(atlas)
     }
 
-    pub fn get_advance(&self, index: usize, cursor: &mut Float2) -> f32 {
+    pub fn get_advance(&self, index: usize) -> f32 {
         self.advances[index].x as f32 / 64.0
     }
 }
